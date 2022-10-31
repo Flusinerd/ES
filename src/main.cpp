@@ -4,8 +4,8 @@
 #include "driver/i2s.h"
 #include "ESPAsyncWebServer.h"
 
-#define BLOCK_LENGTH 1024
-#define SAMPLE_RATE 44100
+#define BLOCK_LENGTH 512
+#define SAMPLE_RATE 96000
 #define CUTTOFF_FREQ 20000
 #define NYQUIST_FREQ SAMPLE_RATE / 2
 const double FREQUENCY_RESOLUTION = (double)SAMPLE_RATE / BLOCK_LENGTH;
@@ -25,8 +25,8 @@ i2s_config_t i2s_config = {
     .fixed_mclk = 0};
 
 int16_t samples[BLOCK_LENGTH];
-double vReal[BLOCK_LENGTH];
-double vImag[BLOCK_LENGTH];
+double *vReal = (double *)malloc(BLOCK_LENGTH * sizeof(double));
+double *vImag = (double *)malloc(BLOCK_LENGTH * sizeof(double));
 size_t bytes_read = 0;
 
 char *ssid = "FRITZ!Box 6490 Cable";
@@ -92,16 +92,26 @@ void loop()
   FFT.ComplexToMagnitude(vReal, vImag, BLOCK_LENGTH);
 
   // Send data to websocket
-  String data = "[";
+  String data = "{\"fft\": [";
   for (size_t i = 0; i < cuttofIndex; i++)
   {
-    data += "{\"freq\": " + String(indexToFrequency(i)) + ", \"value\": " + String(vReal[i]) + "}";
+    // Set the first value to 0
+    data += "{\"freq\": " + String(indexToFrequency(i)) + ", \"value\": " + String(i > 1 ? vReal[i] : 0) + "}";
     if (i < cuttofIndex - 1)
     {
       data += ",";
     }
   }
 
-  data += "]";
+  data += "], \"samples\": [";
+
+  for (size_t i = 0; i < BLOCK_LENGTH; i++)
+  {
+    data += String(samples[i]) + (i < BLOCK_LENGTH - 1 ? "," : "");
+  }
+
+  data += "]}";
+
   ws.textAll(data);
+  delay(100);
 }
