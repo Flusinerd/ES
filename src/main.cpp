@@ -2,9 +2,10 @@
 #include "arduinoFFT.h"
 #include "driver/adc.h"
 #include "driver/i2s.h"
+#include "ESPAsyncWebServer.h"
 
 #define BLOCK_LENGTH 1024
-#define SAMPLE_RATE 48000
+#define SAMPLE_RATE 44100
 #define CUTTOFF_FREQ 20000
 #define NYQUIST_FREQ SAMPLE_RATE / 2
 const double FREQUENCY_RESOLUTION = (double)SAMPLE_RATE / BLOCK_LENGTH;
@@ -28,7 +29,13 @@ double vReal[BLOCK_LENGTH];
 double vImag[BLOCK_LENGTH];
 size_t bytes_read = 0;
 
+char *ssid = "FRITZ!Box 6490 Cable";
+char *password = "mozartstrasse1";
+
 arduinoFFT FFT = arduinoFFT();
+
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
 
 void setup()
 {
@@ -40,6 +47,20 @@ void setup()
 
   i2s_set_adc_mode(ADC_UNIT_1, ADC1_CHANNEL_4);
 
+  // WIFI
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.println("Connecting to WiFi..");
+  }
+
+  Serial.println("Connected to the WiFi network");
+
+  // Websocket
+  server.addHandler(&ws);
+  server.begin();
+
   delay(2000);
 }
 
@@ -50,8 +71,8 @@ double indexToFrequency(int index)
 
 void loop()
 {
-  i2s_read(I2S_NUM_0, (void **)samples, BLOCK_LENGTH * sizeof(int16_t), &bytes_read, portMAX_DELAY);
-  for (uint16_t i = 0; i < BLOCK_LENGTH; i++)
+  i2s_read(I2S_NUM_0, (void *)samples, sizeof(samples), &bytes_read, portMAX_DELAY);
+  for (size_t i = 0; i < BLOCK_LENGTH; i++)
   {
     // Take the 12 LSBs
     samples[i] = (samples[i] & 0b0000111111111111);
@@ -59,22 +80,28 @@ void loop()
 
   // Copy samples to vReal
   // vImag is zero
-  for (uint16_t i = 0; i < BLOCK_LENGTH; i++)
+  for (size_t i = 0; i < BLOCK_LENGTH; i++)
   {
     vReal[i] = (samples[i] - 2048);
     vImag[i] = 0;
   }
 
+  FFT.DCRemoval();
   FFT.Windowing(vReal, BLOCK_LENGTH, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
   FFT.Compute(vReal, vImag, BLOCK_LENGTH, FFT_FORWARD);
   FFT.ComplexToMagnitude(vReal, vImag, BLOCK_LENGTH);
-  double x = FFT.MajorPeak(vReal, BLOCK_LENGTH, SAMPLE_RATE);
 
-  Serial.println("Major peak at: " + String(x) + "Hz");
-
-  for (uint16_t i = 0; i < cuttofIndex; i++)
+  // Send data to websocket
+  String data = "[";
+  for (size_t i = 0; i < cuttofIndex; i++)
   {
-    Serial.println(String(indexToFrequency(i)) + "Hz: " + String(vReal[i]));
+    data += "{\"freq\": " + String(indexToFrequency(i)) + ", \"value\": " + String(vReal[i]) + "}";
+    if (i < cuttofIndex - 1)
+    {
+      data += ",";
+    }
   }
-  delay(5000);
+
+  data += "]";
+  ws.textAll(data);
 }
