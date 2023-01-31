@@ -29,8 +29,8 @@ double *vReal = (double *)malloc(BLOCK_LENGTH * sizeof(double));
 double *vImag = (double *)malloc(BLOCK_LENGTH * sizeof(double));
 size_t bytes_read = 0;
 
-char *ssid = "FRITZ!Box 6490 Cable";
-char *password = "mozartstrasse1";
+char *ssid = "SSID";
+char *password = "PASSWORD";
 
 arduinoFFT FFT = arduinoFFT();
 
